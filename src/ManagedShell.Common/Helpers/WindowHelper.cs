@@ -1,6 +1,13 @@
 ﻿using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using static ManagedShell.Interop.NativeMethods;
+using Orientation = System.Windows.Controls.Orientation;
+using ActionChangedEventArgs = ManagedShell.Common.SupportingClasses.ActionChangedEventArgs;
+using MsgBx = System.Windows.MessageBox;
 
 namespace ManagedShell.Common.Helpers
 {
@@ -194,5 +201,121 @@ namespace ManagedShell.Common.Helpers
 
             return taskbarHwnd;
         }
+
+        static Action _undoArrangeDesktopWindows = null;
+        public static Action UndoArrangeDesktopWindows
+        {
+            get => _undoArrangeDesktopWindows;
+            private set
+            {
+                _undoArrangeDesktopWindows = value;
+                ArrangeDesktopWindowsUndoChanged?.Invoke(null, new ActionChangedEventArgs(_undoArrangeDesktopWindows));
+            }
+        }
+
+        public static void CascadeDesktopWindows()
+            => ArrangeDesktopWindows((cKids, lpKids) => CascadeWindows(IntPtr.Zero, TileHowFlags.MDITILE_ZORDER, IntPtr.Zero, cKids, lpKids));
+
+        public static void StackDesktopWindows(Orientation orientation)
+            => ArrangeDesktopWindows((cKids, lpKids) => TileWindows(IntPtr.Zero, (orientation == Orientation.Vertical) ? TileHowFlags.MDITILE_VERTICAL : TileHowFlags.MDITILE_HORIZONTAL, IntPtr.Zero, cKids, lpKids));
+
+        static void ArrangeDesktopWindows(Action<int, IntPtr[]> arrange)
+        {
+            Dictionary<IntPtr, Rect> allPrevBounds = new Dictionary<IntPtr, Rect>();
+            Dictionary<IntPtr, WindowShowStyle> allPrevShowCmd = new Dictionary<IntPtr, WindowShowStyle>();
+            EnumDesktopWindows(IntPtr.Zero, (hwnd, lParam) =>
+            {
+                int style = GetWindowLong(hwnd, GWL_EXSTYLE);
+                if (
+                    IsWindow(hwnd)
+                    && IsWindowVisible(hwnd)
+                    && GetWindowRect(hwnd, out Rect bounds)
+                    && TryGetWindowShowStyle(hwnd, out WindowShowStyle showStyle)
+                )
+                {
+                    allPrevBounds[hwnd] = bounds;
+                    allPrevShowCmd[hwnd] = showStyle;
+                }
+                return true;
+            }, 0);
+
+            IntPtr[] hwnds = allPrevBounds.Keys.ToArray();
+            
+            if (hwnds.Length <= 0)
+                return;
+
+            arrange(0, null);
+            
+            for (int winIndex = 0; winIndex < hwnds.Length; winIndex++)
+            {
+                IntPtr hwnd = hwnds[winIndex];
+                bool remove = true;
+
+                if (GetWindowRect(hwnd, out Rect newBounds)
+                    && TryGetWindowShowStyle(hwnd, out WindowShowStyle newShowStyle)
+                    )
+                {
+                    Rect oldBounds = allPrevBounds[hwnd];
+                    WindowShowStyle oldShowStyle = allPrevShowCmd[hwnd];
+                    if (
+                    
+                           (newBounds.Left != oldBounds.Left)
+                        || (newBounds.Top != oldBounds.Top)
+                        || (newBounds.Right != oldBounds.Right)
+                        || (newBounds.Bottom != oldBounds.Bottom)
+                        || (newShowStyle != oldShowStyle)
+                        )
+                    {
+                        remove = false;
+                    }
+                }
+
+                if (remove)
+                {
+                    allPrevBounds.Remove(hwnd);
+                    allPrevShowCmd.Remove(hwnd);
+                }
+            }
+            
+            hwnds = allPrevBounds.Keys.ToArray();
+
+            UndoArrangeDesktopWindows = () =>
+            {
+                for (int winIndex = 0; winIndex < hwnds.Length; winIndex++)
+                {
+                    IntPtr hwnd = hwnds[winIndex];
+                    
+                    Rect prevBounds = allPrevBounds[hwnd];
+                    WindowShowStyle prevShowStyle = allPrevShowCmd[hwnd];
+                    
+                    ShowWindow(hwnd, prevShowStyle);
+                    SetWindowPos(hwnd, IntPtr.Zero, prevBounds.Left, prevBounds.Top, prevBounds.Width, prevBounds.Height, (int)(SetWindowPosFlags.SWP_NOZORDER));
+                }
+                UndoArrangeDesktopWindows = null;
+            };
+        }
+
+        static bool TryGetWindowShowStyle(IntPtr hwnd, out WindowShowStyle showStyle)
+        {
+            WINDOWPLACEMENT placement = new WINDOWPLACEMENT();
+            if (GetWindowPlacement(hwnd, ref placement))
+            {
+                showStyle = placement.showCmd;
+                return true;
+            }
+
+            showStyle = (WindowShowStyle)(13379001);
+            return false;
+        }
+
+        public static void ToggleDesktop()
+        {
+            Process.Start(new ProcessStartInfo("shell:::{3080F90D-D7AD-11D9-BD98-0000947B0257}")
+            {
+                UseShellExecute = true
+            });
+        }
+
+        public static event EventHandler<ActionChangedEventArgs> ArrangeDesktopWindowsUndoChanged;
     }
 }

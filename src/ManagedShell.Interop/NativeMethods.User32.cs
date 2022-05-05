@@ -16,6 +16,9 @@ namespace ManagedShell.Interop
         public static extern int EnumWindows(CallBackPtr callPtr, int lPar);
 
         [DllImport(User32_DllName)]
+        public static extern bool EnumDesktopWindows(IntPtr hDesktop, CallBackPtr lpfn, int lPar);
+
+        [DllImport(User32_DllName)]
         public static extern int EnumChildWindows(IntPtr hParent, CallBackPtr callPtr, int lPar);
 
         [DllImport(User32_DllName, CharSet = CharSet.Unicode)]
@@ -3702,6 +3705,33 @@ namespace ManagedShell.Interop
             ///Clear key
             ///</summary>
             OEM_CLEAR = 0xFE
+        }
+
+        [DllImport(User32_DllName)]
+        public static extern ushort CascadeWindows(IntPtr hwndParent, TileHowFlags wHow, IntPtr lpRect, int cKids, IntPtr[] lpKids);
+
+        [DllImport(User32_DllName)]
+        public static extern int TileWindows(IntPtr hwndParent, TileHowFlags wHow, IntPtr lpRect, int cKids, IntPtr[] lpKids);
+
+        [Flags]
+        public enum TileHowFlags : uint
+        {
+            ///<summary>
+            ///Tiles windows horizontally.
+            ///</summary>
+            MDITILE_HORIZONTAL = 0x0001,
+            ///<summary>
+            ///Tiles windows vertically.
+            ///</summary>
+            MDITILE_VERTICAL = 0x0000,
+            ///<summary>
+            ///Prevents disabled MDI child windows from being cascaded.
+            ///</summary>
+            MDITILE_SKIPDISABLED = 0x0002,
+            ///<summary>
+            ///Arranges the windows in Z order. If this value is not specified, the windows are arranged using the order specified in the lpKids array.
+            ///</summary>
+            MDITILE_ZORDER = 0x0004
         }
     }
 }
